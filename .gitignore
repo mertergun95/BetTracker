@@ -1,0 +1,25 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+.vite/
+
+# Local verification scripts, not part of the app
+.smoke.mjs
+.shot2.mjs
+.icons.mjs
+
+# Capacitor / Android build output
+android/.gradle/
+android/build/
+android/local.properties
+android/app/build/
+android/app/release/
+android/capacitor-cordova-android-plugins/build/
+# Regenerated on every `cap sync`
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+*.apk
+*.aab
+*.keystore

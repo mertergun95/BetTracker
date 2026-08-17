@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      buildType:
+        description: Gradle build type
+        type: choice
+        default: debug
+        options: [debug, release]
+  push:
+    tags: ['v*']
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - name: Build web assets for the app bundle
+        run: npx cross-env BUILD_TARGET=android vite build
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Assemble APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          if [ "${{ inputs.buildType }}" = "release" ]; then
+            ./gradlew assembleRelease
+          else
+            ./gradlew assembleDebug
+          fi
+
+      - name: Collect APKs
+        run: |
+          mkdir -p artifacts
+          # Release builds are unsigned here; signing needs a keystore secret.
+          find android/app/build/outputs/apk -name '*.apk' -exec cp {} artifacts/ \;
+          ls -la artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bettracker-apk-${{ inputs.buildType || 'debug' }}
+          path: artifacts/*.apk
+          if-no-files-found: error

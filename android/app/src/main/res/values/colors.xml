@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the web app's dark surface, so launching the app does not
+         flash white before the WebView paints. -->
+    <color name="launchBackground">#0C0F14</color>
+    <color name="colorPrimary">#2A78D6</color>
+    <color name="colorPrimaryDark">#1C5CAB</color>
+    <color name="colorAccent">#2A78D6</color>
+</resources>
