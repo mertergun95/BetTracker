@@ -2,7 +2,12 @@ name: Deploy web app to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # This repository was created empty, so its first pushed branch became the
+    # default one and no `main` exists. Both are listed so the site deploys
+    # today and keeps deploying if `main` is created later.
+    branches:
+      - main
+      - claude/repository-ekleme-gz6um0
   workflow_dispatch:
 
 # Required by actions/deploy-pages.
