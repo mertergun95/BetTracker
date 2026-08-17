@@ -1,5 +1,21 @@
 # BetTracker
 
+> ## 📦 Bu modül NFL Tracker'a taşındı
+>
+> Geliştirme artık [mertergun95/NFL-Tracker](https://github.com/mertergun95/NFL-Tracker)
+> deposunda sürüyor. Modül orada hem web arayüzünün hem de mobil uygulamanın bir
+> bölümü olarak yaşıyor ve bir kullanıcı girişinin arkasında açılıyor:
+>
+> - **Web:** `#/bets` — `web/src/bettracker/`
+> - **Mobil (Expo):** `Daha › Bahis Takip` — `mobile/src/bettracker/`
+> - **Ayrıntı:** [docs/BETTRACKER.md](https://github.com/mertergun95/NFL-Tracker/blob/main/docs/BETTRACKER.md)
+>
+> Bu depo çalışır durumda ve taşınmadan önceki halin kaydı olarak duruyor;
+> yeni özellikler ve düzeltmeler NFL Tracker'a gidiyor. Buradaki veriniz
+> tarayıcının IndexedDB'sinde, taşınan sürümünkiyse kendi kaydında durur —
+> ikisi aynı depolamayı paylaşmaz. Geçmişinizi taşımak için buradan
+> **Ayarlar › JSON dışa aktar**, NFL Tracker'da **JSON içe aktar** yapın.
+
 Bahis takibi, kasa (bankroll) yönetimi ve performans analizi.
 Tek bir TypeScript kod tabanı; hem **web sitesi** (GitHub Pages) hem de **Android
 uygulaması** (Capacitor) olarak çalışır.
