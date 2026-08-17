@@ -101,10 +101,15 @@ export default function Bets() {
             className="btn btn--primary"
             onClick={() =>
               setEditing(
-                emptyBet(activeBankrollId ?? bankrolls[0]!.id, {
-                  unitStake: activeBankroll?.defaultStake ?? 0,
-                  commission: settings.defaultCommission,
-                }),
+                emptyBet(
+                  activeBankrollId ?? bankrolls[0]!.id,
+                  {
+                    unitStake: activeBankroll?.defaultStake ?? 0,
+                    commission: settings.defaultCommission,
+                    bookmaker: settings.defaultBookmaker,
+                  },
+                  activeBankroll?.sports ?? [],
+                ),
               )
             }
           >
@@ -199,10 +204,15 @@ export default function Bets() {
         aria-label={t('bet.new')}
         onClick={() =>
           setEditing(
-            emptyBet(activeBankrollId ?? bankrolls[0]!.id, {
-              unitStake: activeBankroll?.defaultStake ?? 0,
-              commission: settings.defaultCommission,
-            }),
+            emptyBet(
+              activeBankrollId ?? bankrolls[0]!.id,
+              {
+                unitStake: activeBankroll?.defaultStake ?? 0,
+                commission: settings.defaultCommission,
+                bookmaker: settings.defaultBookmaker,
+              },
+              activeBankroll?.sports ?? [],
+            ),
           )
         }
       >
@@ -391,7 +401,7 @@ function QuickSettleDialog({
                     <div className="truncate" style={{ fontWeight: 600 }}>
                       {bet.selections.length > 1
                         ? `${bet.selections.length}× ${t('bet.structure.accumulator')}`
-                        : (first?.event || first?.pick || '—')}
+                        : (first?.event || first?.picks[0]?.pick || '—')}
                     </div>
                     <div className="tiny muted">
                       {formatDate(bet.placedAt)} · {bet.bookmaker} ·{' '}

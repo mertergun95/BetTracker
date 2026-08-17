@@ -1,6 +1,8 @@
 import { HashRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { AppProvider, useApp } from '@/state/AppContext';
 import { I18nProvider, useI18n } from '@/i18n';
+import Logo from '@/components/Logo';
+import SyncIndicator from '@/components/SyncIndicator';
 import Dashboard from '@/screens/Dashboard';
 import Bets from '@/screens/Bets';
 import Bankrolls from '@/screens/Bankrolls';
@@ -25,40 +27,53 @@ const NAV = [
 
 function Shell() {
   const { t } = useI18n();
-  const { ready } = useApp();
+  const { ready, settings, updateSettings } = useApp();
 
   if (!ready) {
     return (
       <div className="splash">
+        <Logo size={44} />
         <div className="spinner" />
         <span className="small">{t('common.loading')}</span>
       </div>
     );
   }
 
+  const pinned = settings.sidebarPinned;
+
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside className={`sidebar${pinned ? ' sidebar--pinned' : ''}`}>
         <div className="sidebar__brand">
-          <span className="sidebar__logo">📈</span>
-          <span>{t('app.name')}</span>
+          <Logo size={32} title={t('app.name')} />
+          <span className="sidebar__label">{t('app.name')}</span>
         </div>
+
         {NAV.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === '/'}
             className={({ isActive }) => `sidebar__item${isActive ? ' is-active' : ''}`}
+            title={t(item.key)}
           >
             <span className="sidebar__icon">{item.icon}</span>
-            <span>{t(item.key)}</span>
+            <span className="sidebar__label">{t(item.key)}</span>
           </NavLink>
         ))}
-        <div className="spacer" />
-        <p className="tiny faint" style={{ padding: '0 12px' }}>
-          {t('app.tagline')}
-        </p>
+
+        <button
+          type="button"
+          className="sidebar__pin"
+          onClick={() => updateSettings({ sidebarPinned: !pinned })}
+          title={pinned ? t('nav.unpin') : t('nav.pin')}
+        >
+          <span className="sidebar__icon">{pinned ? '◀' : '▶'}</span>
+          <span className="sidebar__label">{pinned ? t('nav.unpin') : t('nav.pin')}</span>
+        </button>
       </aside>
+
+      <div className={`sidebar-spacer${pinned ? ' sidebar-spacer--pinned' : ''}`} />
 
       <div className="main">
         <div className="content">
@@ -87,6 +102,8 @@ function Shell() {
           </NavLink>
         ))}
       </nav>
+
+      <SyncIndicator />
     </div>
   );
 }

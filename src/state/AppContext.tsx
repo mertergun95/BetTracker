@@ -4,11 +4,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { store } from '@/core/store';
 import { newId } from '@/core/ids';
+import { runSync } from '@/core/syncService';
+import { SyncError } from '@/core/sync';
 import type {
   Bankroll,
   Bet,
@@ -24,6 +27,16 @@ import type {
  * and having it resident means filters, breakdowns and charts recompute
  * instantly without touching the database.
  */
+
+export type SyncStatus = 'off' | 'idle' | 'syncing' | 'ok' | 'error';
+
+export interface SyncState {
+  status: SyncStatus;
+  /** Translation key under `sync.error.*`, when status is 'error'. */
+  errorCode?: string;
+  lastSyncAt?: number;
+  lastStats?: { incoming: number; outgoing: number; bets: number };
+}
 
 export interface AppState {
   ready: boolean;
@@ -56,6 +69,10 @@ export interface AppState {
   saveTransaction: (input: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
 
+  sync: SyncState;
+  /** Runs a sync round now. Returns false when sync is not configured. */
+  syncNow: () => Promise<boolean>;
+
   resetAll: () => Promise<void>;
   restoreBackup: (data: {
     bankrolls: Bankroll[];
@@ -75,6 +92,8 @@ const FALLBACK_SETTINGS: Settings = {
   bookmakers: [],
   tipsters: [],
   defaultCommission: 0,
+  defaultBookmaker: 'Stake',
+  sidebarPinned: false,
   updatedAt: 0,
 };
 
@@ -94,6 +113,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [bets, setBets] = useState<Bet[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [activeBankrollId, setActiveBankrollIdState] = useState<string | null>(null);
+
+  // The mutation callbacks fire this without depending on it, so they stay
+  // referentially stable and do not re-render every consumer on a settings change.
+  const queueSyncRef = useRef<() => void>(() => {});
 
   const reload = useCallback(async () => {
     const [loadedSettings, loadedBankrolls, loadedBets, loadedTx] = await Promise.all([
@@ -162,6 +185,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // A first bankroll becomes the active one immediately, so the user is not
       // left staring at an "all bankrolls" view with a single entry.
       setActiveBankrollIdState((current) => current ?? saved.id);
+      queueSyncRef.current();
       return saved;
     },
     [],
@@ -179,29 +203,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBets(nextBets);
       setTransactions(nextTx);
       setActiveBankrollIdState((current) => (current === id ? null : current));
+      queueSyncRef.current();
     },
     [],
   );
 
-  const saveBet = useCallback(async (bet: Bet) => {
-    await store.saveBet(bet);
-    setBets(await store.listBets());
-  }, []);
+  const saveBet = useCallback(
+    async (bet: Bet) => {
+      await store.saveBet(bet);
+      setBets(await store.listBets());
+      queueSyncRef.current();
+    },
+    [],
+  );
 
   const updateBets = useCallback(async (ids: string[], patch: Partial<Bet>) => {
     await store.updateBets(ids, patch);
     setBets(await store.listBets());
+    queueSyncRef.current();
   }, []);
 
   const deleteBets = useCallback(async (ids: string[]) => {
     await store.deleteBets(ids);
     setBets(await store.listBets());
+    queueSyncRef.current();
   }, []);
 
   const saveTransaction = useCallback(
     async (input: Omit<Transaction, 'id' | 'createdAt'> & { id?: string }) => {
       await store.saveTransaction(input);
       setTransactions(await store.listTransactions());
+      queueSyncRef.current();
     },
     [],
   );
@@ -209,7 +241,80 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteTransaction = useCallback(async (id: string) => {
     await store.deleteTransaction(id);
     setTransactions(await store.listTransactions());
+    queueSyncRef.current();
   }, []);
+
+  /* ---------------- Sync ---------------- */
+
+  const [sync, setSync] = useState<SyncState>({ status: 'off' });
+  // A ref, not state: the debounce timer must not retrigger renders, and the
+  // dirty flag has to survive between them.
+  const pendingPush = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncNow = useCallback(async (): Promise<boolean> => {
+    const current = await store.getSettings();
+    const config = current.sync;
+    if (!config?.token || !config.owner || !config.repo) {
+      setSync({ status: 'off' });
+      return false;
+    }
+
+    setSync((prev) => ({ ...prev, status: 'syncing' }));
+    try {
+      const outcome = await runSync(config);
+      await reload();
+      setSync({
+        status: 'ok',
+        lastSyncAt: outcome.at,
+        lastStats: {
+          incoming: outcome.stats.incoming,
+          outgoing: outcome.stats.outgoing,
+          bets: outcome.stats.bets,
+        },
+      });
+      return true;
+    } catch (err) {
+      setSync({
+        status: 'error',
+        errorCode: err instanceof SyncError ? err.code : 'http',
+      });
+      return false;
+    }
+  }, [reload]);
+
+  /**
+   * Queues a push after a local change. The delay coalesces a burst of edits
+   * — settling ten bets in a row — into one commit instead of ten.
+   */
+  const queueSync = useCallback(() => {
+    if (!settings.sync?.auto || !settings.sync.token) return;
+    if (pendingPush.current) clearTimeout(pendingPush.current);
+    pendingPush.current = setTimeout(() => {
+      pendingPush.current = null;
+      void syncNow();
+    }, 4000);
+  }, [settings.sync?.auto, settings.sync?.token, syncNow]);
+
+  // Pull once on launch when sync is configured.
+  useEffect(() => {
+    if (!ready) return;
+    if (!settings.sync?.token || !settings.sync.auto) {
+      setSync((prev) => (prev.status === 'off' ? prev : { status: 'off' }));
+      return;
+    }
+    void syncNow();
+    // Deliberately runs only when sync is switched on or the app becomes ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, settings.sync?.token, settings.sync?.auto]);
+
+  useEffect(
+    () => () => {
+      if (pendingPush.current) clearTimeout(pendingPush.current);
+    },
+    [],
+  );
+
+  queueSyncRef.current = queueSync;
 
   const resetAll = useCallback(async () => {
     await store.clearAll();
@@ -283,6 +388,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteBets,
       saveTransaction,
       deleteTransaction,
+      sync,
+      syncNow,
       resetAll,
       restoreBackup,
     }),
@@ -307,6 +414,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteBets,
       saveTransaction,
       deleteTransaction,
+      sync,
+      syncNow,
       resetAll,
       restoreBackup,
     ],
@@ -322,7 +431,12 @@ export function useApp(): AppState {
 }
 
 /** Convenience for creating a blank bet bound to the active bankroll. */
-export function emptyBet(bankrollId: string, defaults: Partial<Bet> = {}): Bet {
+export function emptyBet(
+  bankrollId: string,
+  defaults: Partial<Bet> = {},
+  /** Sports the bankroll accepts; the first one seeds the blank selection. */
+  allowedSports: string[] = [],
+): Bet {
   const now = Date.now();
   return {
     id: newId('bet_'),
@@ -332,10 +446,9 @@ export function emptyBet(bankrollId: string, defaults: Partial<Bet> = {}): Bet {
       {
         id: newId('sel_'),
         event: '',
-        sport: 'football',
+        sport: allowedSports[0] ?? 'football',
         competition: '',
-        market: '',
-        pick: '',
+        picks: [{ id: newId('pk_'), market: '', pick: '' }],
         odds: 0,
         side: 'back',
         status: 'pending',

@@ -5,11 +5,19 @@ import type {
   Bankroll,
   Bet,
   BetStructure,
+  BuilderPick,
   Selection,
   SelectionStatus,
   Settings,
   Transaction,
 } from './types';
+
+/**
+ * Separator between a leg's builder picks inside one CSV cell.
+ * The `market` and `pick` columns are split on it and zipped back together, so
+ * a bet builder survives a round trip through a spreadsheet.
+ */
+const PICK_SEPARATOR = ' | ';
 
 /**
  * Backup, export and import.
@@ -140,8 +148,8 @@ export function betsToCsv(bets: Bet[], bankrollNames: Map<string, string> = new 
         sport: sel.sport,
         competition: sel.competition,
         event: sel.event,
-        market: sel.market,
-        pick: sel.pick,
+        market: sel.picks.map((p) => p.market).join(PICK_SEPARATOR),
+        pick: sel.picks.map((p) => p.pick).join(PICK_SEPARATOR),
         side: sel.side,
         odds: sel.odds,
         closing_odds: sel.closingOdds ?? '',
@@ -256,6 +264,19 @@ function normaliseStatus(raw: string): SelectionStatus {
   return aliases[s] ?? 'pending';
 }
 
+/** Zips the market and pick cells back into builder picks. */
+function parsePicks(marketCell: string, pickCell: string): BuilderPick[] {
+  const markets = marketCell ? marketCell.split(PICK_SEPARATOR) : [];
+  const picks = pickCell ? pickCell.split(PICK_SEPARATOR) : [];
+  const count = Math.max(markets.length, picks.length, 1);
+
+  return Array.from({ length: count }, (_, i) => ({
+    id: newId('pk_'),
+    market: (markets[i] ?? '').trim(),
+    pick: (picks[i] ?? '').trim(),
+  }));
+}
+
 function normaliseStructure(raw: string): BetStructure {
   const s = raw.trim().toLowerCase();
   if (s.startsWith('acc') || s.startsWith('komb') || s === 'parlay' || s === 'multi') {
@@ -365,8 +386,7 @@ export function csvToBets(
         event: get(row, idx.event) || '—',
         sport: get(row, idx.sport) || 'other',
         competition: get(row, idx.competition),
-        market: get(row, idx.market),
-        pick: get(row, idx.pick),
+        picks: parsePicks(get(row, idx.market), get(row, idx.pick)),
         odds,
         side: sideText === 'lay' ? 'lay' : 'back',
         closingOdds: closing !== null && closing > 1 ? closing : undefined,

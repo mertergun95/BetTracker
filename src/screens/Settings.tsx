@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n';
 import { buildBackup, betsToCsv, csvToBets, downloadFile, parseBackup } from '@/core/io';
 import { store } from '@/core/store';
 import { CURRENCIES } from '@/core/reference';
+import SyncSettings from '@/components/SyncSettings';
 import {
   Card,
   ConfirmDialog,
@@ -125,6 +126,19 @@ export default function Settings() {
               />
             </Field>
 
+            <Field label={t('bet.bookmaker')}>
+              <TextInput
+                value={settings.defaultBookmaker}
+                onChange={(v) => updateSettings({ defaultBookmaker: v })}
+                list="default-bookmaker-list"
+              />
+            </Field>
+            <datalist id="default-bookmaker-list">
+              {settings.bookmakers.map((b) => (
+                <option key={b} value={b} />
+              ))}
+            </datalist>
+
             <Field label={`${t('settings.defaultCommission')} (%)`}>
               <input
                 className="input input--num"
@@ -139,6 +153,8 @@ export default function Settings() {
             </Field>
           </div>
         </Card>
+
+        <SyncSettings />
 
         {/* Data */}
         <Card title={t('settings.data')}>

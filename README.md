@@ -4,9 +4,9 @@ Bahis takibi, kasa (bankroll) yönetimi ve performans analizi.
 Tek bir TypeScript kod tabanı; hem **web sitesi** (GitHub Pages) hem de **Android
 uygulaması** (Capacitor) olarak çalışır.
 
-Veriler yalnızca cihazda, tarayıcının IndexedDB'sinde saklanır. Sunucu yok,
-hesap yok, hiçbir şey dışarı gönderilmez. Taşıma ve yedekleme JSON/CSV
-dışa aktarımıyla yapılır.
+Veriler cihazda, tarayıcının IndexedDB'sinde saklanır. İstersen **özel bir
+GitHub deposu** bağlayarak tüm cihazlarını tek bir bahis geçmişinde
+birleştirebilirsin — sunucu yok, hesap yok, veri yalnızca senin deponda.
 
 ---
 
@@ -26,13 +26,45 @@ npm run dev        # http://localhost:5173/BetTracker/
 | `npm run typecheck` | TypeScript kontrolü |
 | `npm run android:sync` | Android için derle ve Capacitor'a kopyala |
 | `npm run android:open` | Android Studio'da aç |
+| `npm run fetch:sports` | Lig, takım ve fikstür verisini yeniler |
 
 ---
 
 ## Özellikler
 
+### Cihazlar arası senkron (GitHub)
+Ayarlar → *Cihazlar arası senkron* bölümünden bağlanır:
+
+1. GitHub'da **özel (private)** bir depo aç, örn. `bettracker-data`
+2. Fine-grained token oluştur, erişimi o depoya sınırla, **Contents: Read and write** ver
+3. Kullanıcı adı, depo ve token'ı gir → **Bağlan**. Her cihazda aynı token ile tekrarla.
+
+Birleştirme **kayıt bazlıdır**: telefonda eklediğin bahisle bilgisayarda
+eklediğin bahsin ikisi de kalır, aynı kaydı iki yerde düzenlediysen son
+güncellenen kazanır. Silmeler mezar taşı (tombstone) ile taşınır, böylece bir
+cihazda sildiğin bahis diğerinden geri gelmez. Token yalnızca o cihazda durur,
+hiçbir yere gönderilmez.
+
+### Lig, takım ve fikstür kataloğu
+`public/data/` altındaki katalog derlemeye gömülüdür ve her gün bir GitHub
+Action ile tazelenir. Bu sayede CORS sorunu, API anahtarı veya kota yoktur —
+ve Android uygulamasında **internetsiz** de çalışır.
+
+**Kapsam:** 25 lig · 1200+ takım · 6800+ fikstür
+- **ABD:** NFL, NCAA Football, NBA, NCAA Basketball
+- **Avrupa futbolu:** İngiltere, İspanya, İtalya, Almanya, Fransa, Hollanda,
+  Portekiz, Belçika, Türkiye, İskoçya, Avusturya, İsviçre, Yunanistan, Rusya,
+  Romanya, İsrail, **Danimarka**, Norveç, İsveç
+- **Kupalar:** Şampiyonlar Ligi, Avrupa Ligi
+
+Bahis eklerken lig seçilir, ardından ya planlanmış bir **fikstür** ya da iki
+takım listeden seçilir; katalogda olmayan bir müsabaka için serbest yazı hep
+açıktır.
+
 ### Bahis kaydı
-- **Tekli**, **kombine** ve **sistem** bahisleri
+- **Bet builder** — aynı müsabakada birden fazla tahmin, **tek oranla** fiyatlanır
+- Tekli/kombine sekmesi yoktur: bir maç girersen tekli, *Başka maç ekle* dersen
+  kombine olur; sistem ise ikinci maçtan sonra çıkan bir anahtarla açılır
 - **Back / Lay** (borsa bahsi) — lay için risk, miktar değil **sorumluluk (liability)** üzerinden ölçülür
 - **Each-way** bahisler (derece sayısı ve derece oranı ayarlanabilir)
 - **Bedava bahis** (kazanınca anapara geri gelmez)
@@ -44,6 +76,10 @@ npm run dev        # http://localhost:5173/BetTracker/
 - Hazır sistem şablonları: Trixie, Patent, Yankee, Lucky 15/31/63, Canadian, Heinz, Super Heinz, Goliath
 
 ### Kasa yönetimi
+- **Spor kısıtı** — bir kasayı yalnızca seçtiğin sporlara açarsın. Sadece
+  Amerikan futbolu seçtiysen o kasaya başka spor girilemez ve bahis formu
+  doğrudan o spora göre açılır. Birden fazla spor seçilebilir; boş bırakırsan
+  kısıt olmaz.
 - Sınırsız kasa, ayrı para birimleriyle (TRY, EUR, USD, GBP, USDT, BTC…)
 - Para yatırma / çekme / bonus / düzeltme işlemleri
 - Kasa başına not defteri
@@ -84,6 +120,11 @@ sıralanabilir tablo olarak.
 - Durum kelimeleri Türkçe ve İngilizce tanınır (`kazandı`, `won`, `iade`, `void`…)
 
 ### Arayüz
+- **Panel** çok bölmeli: solda sermaye grafiği, sağda devam eden bahisler,
+  altta son sonuçlananlar, bugünün özeti ve son 10 sonucun form şeridi
+- **Daraltılabilir menü** — simge şeridi olarak durur, üzerine gelince açılır,
+  istersen sabitlenir. Açılırken içeriği kaydırmaz, üstüne biner.
+- **BT monogramı** — sadece harfler, 20px'te de okunur
 - Türkçe / İngilizce (tam i18n, sayı ve tarih biçimlendirmesi dahil)
 - Açık / koyu / sistem teması
 - Ondalık, Amerikan veya kesirli oran gösterimi
@@ -96,6 +137,9 @@ sıralanabilir tablo olarak.
 ```
 src/
 ├── core/          Saf mantık — UI'dan tamamen bağımsız, testlerin hedefi
+│   ├── sync.ts         Anlık görüntü birleştirme + GitHub taşıma katmanı
+│   ├── syncService.ts  Senkron turu: çek, birleştir, yaz, gönder
+│   ├── sportsData.ts   Lig/takım/fikstür kataloğu erişimi
 │   ├── types.ts        Domain modeli
 │   ├── odds.ts         Oran dönüşümleri, implied olasılık, marj temizleme
 │   ├── systems.ts      Kombinasyon matematiği ve sistem şablonları
@@ -171,8 +215,10 @@ derin bağlantılar yeniden yüklendiğinde 404 vermesin diye, ve Capacitor'ın
 npm test
 ```
 
-70 test, çekirdek matematiği kapsar: oran dönüşümleri, sonuçlandırma (tekli,
+86 test, çekirdek matematiği kapsar: oran dönüşümleri, sonuçlandırma (tekli,
 kombine, sistem, lay, each-way, bedava bahis, bozdurma, çeyrek çizgi), CLV/EV,
 istatistikler (verim, seriler, drawdown, sermaye eğrisi), hesap makineleri
-(dutching eşit kâr, hedge kilidi, Kelly, RTP, simülasyon determinizmi) ve CSV
-gidiş-dönüşü.
+(dutching eşit kâr, hedge kilidi, Kelly, RTP, simülasyon determinizmi), CSV
+gidiş-dönüşü (bet builder dahil) ve **senkron birleştirme** — iki cihazın
+paralel eklemeleri, çakışan düzenlemeler, silme mezar taşları ve silinen bir
+kaydın yeniden dirilmemesi.

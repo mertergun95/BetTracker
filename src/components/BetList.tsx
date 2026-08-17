@@ -39,7 +39,7 @@ export function BetRow({
           ? systemLabel(bet.system ?? { sizes: [2] }, bet.selections.length)
           : t('bet.structure.accumulator')
       }`
-    : (first?.event || first?.pick || '—');
+    : (first?.event || first?.picks[0]?.pick || '—');
 
   return (
     <div className={`bet-item${selected ? ' is-selected' : ''}`}>
@@ -68,11 +68,22 @@ export function BetRow({
           {bet.freeBet && <span className="badge">{t('bet.freeBet')}</span>}
           {bet.eachWay && <span className="badge">E/W</span>}
           {first?.side === 'lay' && <span className="badge">{t('bet.side.lay')}</span>}
+          {!multi && (first?.picks.length ?? 0) > 1 && (
+            <span className="badge badge--pending">
+              {t('bet.builder')} ×{first!.picks.length}
+            </span>
+          )}
         </div>
 
         {!multi && first && (
           <div className="bet-item__meta">
-            <span>{first.pick || first.market || '—'}</span>
+            {/* Several picks on one event means a bet builder; show them all. */}
+            <span>
+              {first.picks
+                .map((p) => p.pick || p.market)
+                .filter(Boolean)
+                .join('  +  ') || '—'}
+            </span>
             {first.competition && <span className="bet-item__dot">{first.competition}</span>}
           </div>
         )}
@@ -102,8 +113,10 @@ export function BetRow({
               <div className="bet-item__leg" key={s.id}>
                 <span>{sportIcon(s.sport)}</span>
                 <span className="truncate" style={{ flex: 1 }}>
-                  {s.event || s.pick || '—'}
-                  {s.pick && s.event ? ` · ${s.pick}` : ''}
+                  {s.event || '—'}
+                  {s.picks.some((p) => p.pick)
+                    ? ` · ${s.picks.map((p) => p.pick).filter(Boolean).join(' + ')}`
+                    : ''}
                 </span>
                 <span className="num">{formatOdds(s.odds, oddsFormat)}</span>
                 <span

@@ -7,6 +7,7 @@ import type {
   Bet,
   BetFilter,
   Settings,
+  Tombstone,
   Transaction,
 } from './types';
 
@@ -37,6 +38,13 @@ export interface DataStore {
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
 
+  /** Deletion records, so a sync does not resurrect what another device removed. */
+  listTombstones(): Promise<Tombstone[]>;
+  putTombstones(tombstones: Tombstone[]): Promise<void>;
+
+  /** Writes a record without touching `updatedAt`. Used by the sync merger. */
+  putRaw(data: { bankrolls?: Bankroll[]; bets?: Bet[]; transactions?: Transaction[] }): Promise<void>;
+
   /** Wipes every table. Used by "reset app" and before restoring a backup. */
   clearAll(): Promise<void>;
 }
@@ -49,6 +57,8 @@ const DEFAULT_SETTINGS: Settings = {
   bookmakers: DEFAULT_BOOKMAKERS.map((b) => b.name),
   tipsters: [],
   defaultCommission: 0,
+  defaultBookmaker: 'Stake',
+  sidebarPinned: false,
   updatedAt: 0,
 };
 
@@ -73,6 +83,7 @@ class IndexedDbStore implements DataStore {
       id: input.id ?? newId('bk_'),
       name: input.name,
       currency: input.currency ?? existing?.currency ?? 'TRY',
+      sports: input.sports ?? existing?.sports ?? [],
       startingCapital: input.startingCapital ?? existing?.startingCapital ?? 0,
       defaultStake: input.defaultStake ?? existing?.defaultStake ?? 0,
       note: input.note ?? existing?.note ?? '',
@@ -92,10 +103,19 @@ class IndexedDbStore implements DataStore {
   async deleteBankroll(id: string): Promise<void> {
     // Bets and transactions are meaningless without their bankroll, so they go
     // with it rather than being orphaned.
-    await db.transaction('rw', db.bankrolls, db.bets, db.transactions, async () => {
+    await db.transaction('rw', db.bankrolls, db.bets, db.transactions, db.tombstones, async () => {
+      const bets = await db.bets.where('bankrollId').equals(id).primaryKeys();
+      const txs = await db.transactions.where('bankrollId').equals(id).primaryKeys();
+
       await db.bets.where('bankrollId').equals(id).delete();
       await db.transactions.where('bankrollId').equals(id).delete();
       await db.bankrolls.delete(id);
+
+      await db.tombstones.bulkPut([
+        tombstone('bankroll', id),
+        ...bets.map((betId) => tombstone('bet', betId)),
+        ...txs.map((txId) => tombstone('transaction', txId)),
+      ]);
     });
   }
 
@@ -154,7 +174,11 @@ class IndexedDbStore implements DataStore {
   }
 
   async deleteBets(ids: string[]): Promise<void> {
-    await db.bets.bulkDelete(ids);
+    if (ids.length === 0) return;
+    await db.transaction('rw', db.bets, db.tombstones, async () => {
+      await db.bets.bulkDelete(ids);
+      await db.tombstones.bulkPut(ids.map((id) => tombstone('bet', id)));
+    });
   }
 
   /* ---------------- Transactions ---------------- */
@@ -170,17 +194,43 @@ class IndexedDbStore implements DataStore {
     input: Omit<Transaction, 'id' | 'createdAt'> & { id?: string },
   ): Promise<Transaction> {
     const existing = input.id ? await db.transactions.get(input.id) : undefined;
+    const now = Date.now();
     const tx: Transaction = {
       ...input,
       id: input.id ?? newId('tx_'),
-      createdAt: existing?.createdAt ?? Date.now(),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
     };
     await db.transactions.put(tx);
     return tx;
   }
 
   async deleteTransaction(id: string): Promise<void> {
-    await db.transactions.delete(id);
+    await db.transaction('rw', db.transactions, db.tombstones, async () => {
+      await db.transactions.delete(id);
+      await db.tombstones.put(tombstone('transaction', id));
+    });
+  }
+
+  listTombstones(): Promise<Tombstone[]> {
+    return db.tombstones.toArray();
+  }
+
+  async putTombstones(tombstones: Tombstone[]): Promise<void> {
+    if (tombstones.length === 0) return;
+    await db.tombstones.bulkPut(tombstones);
+  }
+
+  async putRaw(data: {
+    bankrolls?: Bankroll[];
+    bets?: Bet[];
+    transactions?: Transaction[];
+  }): Promise<void> {
+    await db.transaction('rw', db.bankrolls, db.bets, db.transactions, async () => {
+      if (data.bankrolls?.length) await db.bankrolls.bulkPut(data.bankrolls);
+      if (data.bets?.length) await db.bets.bulkPut(data.bets);
+      if (data.transactions?.length) await db.transactions.bulkPut(data.transactions);
+    });
   }
 
   /* ---------------- Settings ---------------- */
@@ -201,15 +251,28 @@ class IndexedDbStore implements DataStore {
   }
 
   async clearAll(): Promise<void> {
-    await db.transaction('rw', db.bankrolls, db.bets, db.transactions, db.settings, async () => {
-      await Promise.all([
-        db.bets.clear(),
-        db.transactions.clear(),
-        db.bankrolls.clear(),
-        db.settings.clear(),
-      ]);
-    });
+    await db.transaction(
+      'rw',
+      db.bankrolls,
+      db.bets,
+      db.transactions,
+      db.settings,
+      db.tombstones,
+      async () => {
+        await Promise.all([
+          db.bets.clear(),
+          db.transactions.clear(),
+          db.bankrolls.clear(),
+          db.settings.clear(),
+          db.tombstones.clear(),
+        ]);
+      },
+    );
   }
+}
+
+function tombstone(kind: Tombstone['kind'], recordId: string): Tombstone {
+  return { id: `${kind}:${recordId}`, kind, recordId, deletedAt: Date.now() };
 }
 
 /* ------------------------------------------------------------------ *
@@ -263,7 +326,13 @@ export function applyFilter(bets: Bet[], filter: BetFilter): Bet[] {
         bet.bookmaker,
         bet.tipster ?? '',
         ...bet.tags,
-        ...bet.selections.flatMap((s) => [s.event, s.pick, s.competition, s.market]),
+        ...bet.selections.flatMap((s) => [
+          s.event,
+          s.competition,
+          s.homeTeam ?? '',
+          s.awayTeam ?? '',
+          ...s.picks.flatMap((p) => [p.market, p.pick]),
+        ]),
       ]
         .join(' ')
         .toLowerCase();

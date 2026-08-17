@@ -37,19 +37,42 @@ export type BetStatus =
   | 'partial'
   | 'cashed_out';
 
+/**
+ * One line of a bet builder: a market and the side taken in it.
+ *
+ * A selection holds an array of these. Several picks on the SAME event share
+ * one price — that is exactly what a bet builder (same-game parlay) is, and
+ * why the odds live on the selection rather than on the pick.
+ */
+export interface BuilderPick {
+  id: string;
+  /** e.g. "1X2", "Over/Under 2.5", "Anytime Goalscorer" */
+  market: string;
+  /** The side taken, e.g. "Galatasaray", "Over 2.5", "Icardi" */
+  pick: string;
+}
+
 export interface Selection {
   id: string;
-  /** e.g. "Galatasaray - Fenerbahçe" */
+  /** Display label, e.g. "Galatasaray - Fenerbahçe" */
   event: string;
-  /** Key from `sports.ts`, e.g. "football" */
+  /** Home team name, when the event came from the fixture catalogue. */
+  homeTeam?: string;
+  awayTeam?: string;
+  /** League id from the catalogue, e.g. "tur.1". */
+  leagueId?: string;
+  /** Fixture id from the catalogue, when a scheduled match was picked. */
+  fixtureId?: string;
+  /** Key from `reference.ts`, e.g. "football" */
   sport: string;
-  /** e.g. "Süper Lig" */
+  /** League display name, e.g. "Süper Lig" */
   competition: string;
-  /** e.g. "1X2", "Over/Under 2.5", "Asian Handicap -0.25" */
-  market: string;
-  /** The actual pick, e.g. "Galatasaray", "Over 2.5" */
-  pick: string;
-  /** Decimal odds taken. For a lay this is the lay price. */
+  /**
+   * One or more picks. A single pick is an ordinary selection; two or more are
+   * a bet builder on the same event, priced as one leg.
+   */
+  picks: BuilderPick[];
+  /** Decimal odds taken for this leg as a whole. For a lay this is the lay price. */
   odds: number;
   side: BetSide;
   /**
@@ -133,12 +156,21 @@ export interface Transaction {
   note?: string;
   occurredAt: number;
   createdAt: number;
+  /** Bumped on every write, so the sync merger can pick the newer copy. */
+  updatedAt: number;
 }
 
 export interface Bankroll {
   id: string;
   name: string;
   currency: string;
+  /**
+   * Sports this bankroll accepts, as keys from `reference.ts`.
+   * An empty array means no restriction. When set, the bet form defaults to
+   * these sports and refuses selections outside them, which is what keeps a
+   * single-sport bankroll's statistics meaningful.
+   */
+  sports: string[];
   /** Money put in at creation. Further movements are `Transaction`s. */
   startingCapital: number;
   /** Default stake used to prefill the bet form. */
@@ -154,6 +186,42 @@ export interface Bankroll {
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type Language = 'tr' | 'en';
 
+/**
+ * Cross-device sync against a private GitHub repository.
+ *
+ * The app is a static site with no backend, so the user's own fine-grained
+ * token is what authorises writes. It is held only in this device's IndexedDB
+ * and never leaves the browser except as an Authorization header to
+ * api.github.com.
+ */
+export interface SyncConfig {
+  owner: string;
+  repo: string;
+  branch: string;
+  /** File the snapshot is written to, e.g. "bettracker.json". */
+  path: string;
+  token: string;
+  /** Push after every change, and pull on launch. */
+  auto: boolean;
+  lastSyncAt?: number;
+  /** Blob SHA last seen, used to detect a remote change before overwriting. */
+  lastSha?: string;
+}
+
+/**
+ * Record of a deletion.
+ *
+ * Without these, a delete on one device would be silently undone by the next
+ * merge from a device that still has the record.
+ */
+export interface Tombstone {
+  /** Composite key: `${kind}:${recordId}`. */
+  id: string;
+  kind: 'bet' | 'bankroll' | 'transaction';
+  recordId: string;
+  deletedAt: number;
+}
+
 export interface Settings {
   id: 'settings';
   language: Language;
@@ -166,6 +234,11 @@ export interface Settings {
   tipsters: string[];
   /** Stake unit used by the staking calculator, as a % of bankroll. */
   defaultCommission: number;
+  /** Bookmaker prefilled on a new bet. */
+  defaultBookmaker: string;
+  /** Sidebar held open, rather than collapsed to an icon rail. */
+  sidebarPinned: boolean;
+  sync?: SyncConfig;
   updatedAt: number;
 }
 

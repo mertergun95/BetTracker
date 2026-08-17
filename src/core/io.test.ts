@@ -14,8 +14,7 @@ function makeBet(overrides: Partial<Bet> = {}): Bet {
         event: 'Galatasaray - Fenerbahçe',
         sport: 'football',
         competition: 'Süper Lig',
-        market: '1X2',
-        pick: 'Galatasaray',
+        picks: [{ id: 'pk_1', market: '1X2', pick: 'Galatasaray' }],
         odds: 2.4,
         side: 'back',
         status: 'won',
@@ -67,7 +66,7 @@ describe('csv round trip', () => {
     expect(imported.bookmaker).toBe('Bet365');
     expect(imported.tags).toEqual(['value']);
     expect(imported.note).toBe('Comma, and "quotes" inside');
-    expect(imported.selections[0]!.pick).toBe('Galatasaray');
+    expect(imported.selections[0]!.picks[0]!.pick).toBe('Galatasaray');
     expect(imported.selections[0]!.odds).toBeCloseTo(2.4);
     expect(imported.selections[0]!.closingOdds).toBeCloseTo(2.1);
     expect(settleBet(imported).profit).toBeCloseTo(140);
@@ -106,6 +105,47 @@ describe('csv round trip', () => {
     const { bets } = csvToBets(betsToCsv([system]), { bankrollId: 'bk1' });
     expect(bets[0]!.system?.sizes).toEqual([2, 3]);
     expect(settleBet(bets[0]!).profit).toBeCloseTo(160);
+  });
+
+  it('keeps a bet builder\'s several picks under one price', () => {
+    const builder = makeBet({
+      selections: [
+        {
+          ...makeBet().selections[0]!,
+          picks: [
+            { id: 'p1', market: '1X2', pick: 'Galatasaray' },
+            { id: 'p2', market: 'Over/Under 2.5', pick: 'Over 2.5' },
+            { id: 'p3', market: 'Anytime Goalscorer', pick: 'Icardi' },
+          ],
+          odds: 4.5,
+        },
+      ],
+    });
+
+    const { bets } = csvToBets(betsToCsv([builder]), { bankrollId: 'bk1' });
+    const leg = bets[0]!.selections[0]!;
+
+    // One leg, one price, three picks.
+    expect(bets[0]!.selections).toHaveLength(1);
+    expect(leg.odds).toBeCloseTo(4.5);
+    expect(leg.picks).toHaveLength(3);
+    expect(leg.picks.map((p) => p.pick)).toEqual(['Galatasaray', 'Over 2.5', 'Icardi']);
+    expect(leg.picks.map((p) => p.market)).toEqual([
+      '1X2',
+      'Over/Under 2.5',
+      'Anytime Goalscorer',
+    ]);
+    expect(settleBet(bets[0]!).profit).toBeCloseTo(350);
+  });
+
+  it('reads a legacy CSV that has one market and pick per row', () => {
+    const csv = ['bet_id,event,market,pick,odds,stake,status', 'a,A - B,1X2,Home,2.0,100,won'].join(
+      '\n',
+    );
+    const { bets } = csvToBets(csv, { bankrollId: 'bk1' });
+    expect(bets[0]!.selections[0]!.picks).toEqual([
+      expect.objectContaining({ market: '1X2', pick: 'Home' }),
+    ]);
   });
 
   it('skips unusable rows instead of failing the whole import', () => {

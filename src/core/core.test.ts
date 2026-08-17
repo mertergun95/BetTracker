@@ -34,8 +34,7 @@ function sel(odds: number, status: SelectionStatus = 'pending', extra: Partial<S
     event: 'A - B',
     sport: 'football',
     competition: 'Test Lig',
-    market: '1X2',
-    pick: 'A',
+    picks: [{ id: `p${idCounter++}`, market: '1X2', pick: 'A' }],
     odds,
     side: 'back',
     status,
@@ -468,6 +467,7 @@ describe('statistics', () => {
           amount: 500,
           occurredAt: 20,
           createdAt: 0,
+          updatedAt: 0,
         },
       ],
     );

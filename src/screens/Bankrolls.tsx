@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '@/state/AppContext';
 import { useI18n } from '@/i18n';
 import { computeStats, equityCurve } from '@/core/stats';
-import { BANKROLL_COLORS, CURRENCIES } from '@/core/reference';
+import { BANKROLL_COLORS, CURRENCIES, SPORTS, sportIcon } from '@/core/reference';
 import { EquityChart } from '@/components/charts';
 import {
   Card,
@@ -94,7 +94,7 @@ export default function Bankrolls() {
           <button
             type="button"
             className="btn btn--primary"
-            onClick={() => setEditing({ name: '', currency: 'TRY', startingCapital: 0 })}
+            onClick={() => setEditing({ name: '', currency: 'TRY', startingCapital: 0, sports: [] })}
           >
             + {t('bankroll.new')}
           </button>
@@ -110,7 +110,7 @@ export default function Bankrolls() {
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={() => setEditing({ name: '', currency: 'TRY', startingCapital: 0 })}
+                onClick={() => setEditing({ name: '', currency: 'TRY', startingCapital: 0, sports: [] })}
               >
                 {t('bankroll.new')}
               </button>
@@ -144,6 +144,12 @@ export default function Bankrolls() {
                     )}
                     {activeBankrollId === bankroll.id && (
                       <span className="badge badge--pending">{t('bankroll.active')}</span>
+                    )}
+                    {bankroll.sports.length > 0 && (
+                      <span className="badge" title={bankroll.sports.join(', ')}>
+                        {bankroll.sports.slice(0, 3).map((key) => sportIcon(key)).join(' ')}
+                        {bankroll.sports.length > 3 ? ` +${bankroll.sports.length - 3}` : ''}
+                      </span>
                     )}
                   </div>
                   <div className="row row--tight">
@@ -333,6 +339,7 @@ function BankrollDialog({
     currency: 'TRY',
     startingCapital: 0,
     defaultStake: 0,
+    sports: [],
     color: BANKROLL_COLORS[0],
     ...initial,
   });
@@ -398,6 +405,39 @@ function BankrollDialog({
             />
           </Field>
         </div>
+
+        <Field label={t('bankroll.sports')} hint={t('bankroll.sports.hint')}>
+          <div className="chip-row">
+            <button
+              type="button"
+              className={`chip${(draft.sports ?? []).length === 0 ? ' is-active' : ''}`}
+              onClick={() => setDraft({ ...draft, sports: [] })}
+            >
+              {t('bankroll.allSports')}
+            </button>
+            {SPORTS.map((sport) => {
+              const selected = (draft.sports ?? []).includes(sport.key);
+              return (
+                <button
+                  key={sport.key}
+                  type="button"
+                  className={`chip${selected ? ' is-active' : ''}`}
+                  onClick={() => {
+                    const current = draft.sports ?? [];
+                    setDraft({
+                      ...draft,
+                      sports: selected
+                        ? current.filter((s) => s !== sport.key)
+                        : [...current, sport.key],
+                    });
+                  }}
+                >
+                  {sport.icon} {t(`sport.${sport.key}` as 'sport.football')}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
 
         <Field label={t('common.color')}>
           <div className="chip-row">
@@ -476,6 +516,7 @@ function TransactionDialog({
                 amount: kind === 'withdrawal' ? -Math.abs(amount) : Math.abs(amount),
                 note: note || undefined,
                 occurredAt: Number.isFinite(parsed) ? parsed : Date.now(),
+                updatedAt: Date.now(),
               });
             }}
           >

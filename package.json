@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "android:sync": "cross-env BUILD_TARGET=android vite build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "fetch:sports": "cross-env NODE_USE_ENV_PROXY=1 node scripts/fetch-sports-data.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
